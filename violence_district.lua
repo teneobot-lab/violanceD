@@ -12,6 +12,7 @@ return function(Hub)
         VDSkillMode = "Perfect",
         VDSpeedBoost = false,
         VDSpeedMultiplier = 0.30,
+        VDSpeedSafeMode = true,
     })
 
     local playerGui
@@ -137,34 +138,58 @@ return function(Hub)
         end
     end
 
+    local function restoreSpeed(hum)
+        local rec = speedRecords[hum]
+        if not rec then return end
+        pcall(function()
+            -- Restore only when our own value is still applied.
+            if hum and hum.Parent and rec.applied
+                and math.abs(hum.WalkSpeed - rec.applied) < 0.05 then
+                hum.WalkSpeed = rec.original
+            end
+        end)
+        speedRecords[hum] = nil
+    end
+
+    local function isSafeMovementState(char, hum)
+        if not Cfg.VDSpeedSafeMode then return false end
+        if not char or not hum or hum.Health <= 0 then return true end
+
+        -- Pause boost during common constrained/action states, when exposed by the game.
+        local blockedAttributes = {
+            "IsHooked", "IsCarried", "Crouching", "IsInteracting",
+            "IsRepairing", "IsHealing", "IsVaulting", "DoingAction",
+        }
+        for _, attributeName in ipairs(blockedAttributes) do
+            local value = char:GetAttribute(attributeName)
+            if value == true then return true end
+            value = hum:GetAttribute(attributeName)
+            if value == true then return true end
+        end
+        if hum.Health <= 50 then return true end
+        return false
+    end
+
     local function speedStep()
         local char = LP.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if not hum then return end
 
-        if Cfg.VDSpeedBoost then
-            local rec = speedRecords[hum]
-            if not rec then
-                rec = {original = hum.WalkSpeed, applied = nil}
-                speedRecords[hum] = rec
-            end
-            local multiplier = math.clamp(tonumber(Cfg.VDSpeedMultiplier) or 0.30, 0, 2)
-            local target = rec.original * (1 + multiplier)
-            rec.applied = target
-            if math.abs(hum.WalkSpeed - target) > 0.05 then
-                pcall(function() hum.WalkSpeed = target end)
-            end
-        else
-            local rec = speedRecords[hum]
-            if rec then
-                pcall(function()
-                    -- Restore only when our own value is still applied.
-                    if rec.applied and math.abs(hum.WalkSpeed - rec.applied) < 0.05 then
-                        hum.WalkSpeed = rec.original
-                    end
-                end)
-                speedRecords[hum] = nil
-            end
+        if not Cfg.VDSpeedBoost or isSafeMovementState(char, hum) then
+            restoreSpeed(hum)
+            return
+        end
+
+        local rec = speedRecords[hum]
+        if not rec then
+            rec = {original = hum.WalkSpeed, applied = nil}
+            speedRecords[hum] = rec
+        end
+        local multiplier = math.clamp(tonumber(Cfg.VDSpeedMultiplier) or 0.30, 0, 2)
+        local target = rec.original * (1 + multiplier)
+        rec.applied = target
+        if math.abs(hum.WalkSpeed - target) > 0.05 then
+            pcall(function() hum.WalkSpeed = target end)
         end
     end
 
@@ -176,27 +201,24 @@ return function(Hub)
             speedStep()
         end,
         cleanup = function()
-            for hum, rec in pairs(speedRecords) do
-                pcall(function()
-                    if hum.Parent and rec.applied and math.abs(hum.WalkSpeed - rec.applied) < 0.05 then
-                        hum.WalkSpeed = rec.original
-                    end
-                end)
+            for hum in pairs(speedRecords) do
+                restoreSpeed(hum)
             end
             table.clear(speedRecords)
         end,
     })
 
     Hub.ui(function(UI)
-        local p = UI.page("Survivor", 2)
+        local p = UI.page("Violence District", 7)
         p:Section("Generator / Skill Check")
         p:Toggle("Auto Skill Check", "VDAutoSkillCheck")
         p:Choice("Mode Skill Check", "VDSkillMode", {"Perfect", "Normal", "Instant"})
         p:Section("Movement")
         p:Toggle("Speed Boost", "VDSpeedBoost")
         p:Slider("Boost Multiplier", "VDSpeedMultiplier", 0, 2, 0.05, "x")
+        p:Toggle("Speed Safe Mode", "VDSpeedSafeMode")
         p:Info(function()
-            return "Modul port dari VD.lua. Uji di private server terlebih dahulu; nama GUI dan input dapat berubah setelah update game."
+            return "Safe Mode menjeda boost saat kondisi aksi/terbatas terdeteksi atau HP <= 50. Uji di private server; WalkSpeed dapat ditimpa server."
         end)
     end)
 end
