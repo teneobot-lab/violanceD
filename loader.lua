@@ -17,7 +17,7 @@ local SOURCE = {
 local ORDER = {
     "hub", "games", "config", "cats", "ui", "pool", "index", "roles",
     "esp_players", "esp_objects", "esp_zombies", "world", "ui_tabs",
-    "violence_district",
+    "violence_district", "killer" ,
 }
 
 -- gagal di salah satu ini = hentikan semuanya
