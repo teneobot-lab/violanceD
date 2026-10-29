@@ -177,6 +177,9 @@ return function(Hub)
         end
 
         c:Section("Tampilan")
+        -- tiap ketuk pindah ke tema berikutnya (Overworld, Light, Dark, Underground, Castle, Star Road);
+        -- aksen ikut ke warna bawaan tema, dan masih bisa diubah manual lewat "Warna aksen"
+        c:Button(function() return "Tema: " .. tostring(Cfg.UITheme) end, function() UI.nextTheme() end)
         c:Color("Warna aksen", "UIAccent")
         c:Button("Reset ukuran jendela", function()
             UI.resetWindow()
