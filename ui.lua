@@ -1,4 +1,6 @@
 -- ui.lua | mesin UI: sidebar, pencarian, grup lipat, color picker, jendela dapat diubah ukurannya
+-- Tema: 6 gaya (Overworld, Light, Dark, Underground, Castle, Star Road) dengan gaya "blok"
+-- (outline tebal, bayangan blok, topbar berwarna, sidebar berwarna). Referensi desain: Mario Hub UI V2.
 -- Modul lain menambah halaman lewat:
 --   Hub.ui(function(UI)
 --       local p = UI.page("Nama Tab", 6)        -- angka = urutan di sidebar
@@ -6,29 +8,60 @@
 --       p:Toggle("Label", "KeyCfg")
 --   end)
 -- Kontrol berlabel ikut terindeks untuk pencarian (halaman + judul grup + label).
+-- Token warna di UI.T: bg, side, surface, raised, track, line, text, muted, danger, white, accent
+-- (+ top, topText, sideMuted, tabOn, tabOnText, outline, shadow, onAccent).
 return function(Hub)
     local UIS = game:GetService("UserInputService")
     local TS = game:GetService("TweenService")
     local Cfg, Config, U = Hub.Cfg, Hub.Config, Hub.util
 
-    Config.declare({ UIAccent = Color3.fromRGB(94, 140, 255), UIW = 0, UIH = 0 })
+    Config.declare({ UIAccent = Color3.fromRGB(212, 84, 70), UITheme = "Overworld", UIW = 0, UIH = 0 })
 
-    local T = {
-        bg = Color3.fromRGB(13, 13, 17),
-        side = Color3.fromRGB(17, 17, 22),
-        surface = Color3.fromRGB(23, 23, 30),
-        raised = Color3.fromRGB(34, 34, 45),
-        line = Color3.fromRGB(42, 42, 55),
-        text = Color3.fromRGB(232, 232, 240),
-        muted = Color3.fromRGB(128, 128, 146),
-        danger = Color3.fromRGB(214, 76, 76),
-        white = Color3.new(1, 1, 1),
-        accent = Cfg.UIAccent,
+    local THEME_ORDER = { "Overworld", "Light", "Dark", "Underground", "Castle", "Star Road" }
+    local THEMES = {}
+    local function HX(h)
+        return Color3.fromRGB(tonumber(h:sub(1, 2), 16), tonumber(h:sub(3, 4), 16), tonumber(h:sub(5, 6), 16))
+    end
+    local function pal(name, spec)
+        local tokens, accent = {}, nil
+        for k, v in pairs(spec) do
+            if k == "accent" then accent = HX(v) else tokens[k] = HX(v) end
+        end
+        THEMES[name] = { tokens = tokens, accent = accent }
+    end
+    pal("Overworld", { bg = "C9DAEE", side = "9A5D44", sideMuted = "E3C7B3", top = "7896CC", topText = "FDFDFD", surface = "FAF6EE", raised = "F1E8D6", track = "DFD5C5", line = "D6CAB4", text = "3A3028", muted = "76685A", danger = "C8453A", outline = "40394B", shadow = "7E86A4", tabOn = "FBF5EA", tabOnText = "B8463A", onAccent = "FEFEFE", accent = "D45446" })
+    pal("Light", { bg = "F2EEE7", side = "E9E2D5", sideMuted = "8B7F70", top = "ECE4D6", topText = "4A3F35", surface = "FEFEFC", raised = "F6F2EA", track = "E6DFD3", line = "D8CFBF", text = "3A3028", muted = "7C6F61", danger = "CF4F42", outline = "4C4659", shadow = "D0C8BC", tabOn = "D45446", tabOnText = "FEFEFD", onAccent = "FEFEFE", accent = "D45446" })
+    pal("Dark", { bg = "1E1F26", side = "22232B", sideMuted = "8D8A9C", top = "18191F", topText = "ECEAF5", surface = "2A2B34", raised = "31323C", track = "454756", line = "3A3B47", text = "ECEAF4", muted = "A9A6B8", danger = "EA6A5E", outline = "0F0F13", shadow = "0A0A0D", tabOn = "D85A4E", tabOnText = "FEFEFD", onAccent = "FEFEFE", accent = "DE5E52" })
+    pal("Underground", { bg = "161C36", side = "24337A", sideMuted = "9AA9DE", top = "10152F", topText = "ECF0FF", surface = "202849", raised = "28315A", track = "3D4880", line = "2E3866", text = "F2F4FF", muted = "AEB6E0", danger = "E0665C", outline = "06070F", shadow = "04050B", tabOn = "EEC452", tabOnText = "1E1B2E", onAccent = "FEFEFE", accent = "6390EE" })
+    pal("Castle", { bg = "1F1919", side = "4A4040", sideMuted = "C8B1A5", top = "161010", topText = "FFF0E5", surface = "2B2424", raised = "352C2C", track = "524343", line = "3F3333", text = "FFF1E6", muted = "D7BFB1", danger = "D9584A", outline = "0B0808", shadow = "070505", tabOn = "E2774A", tabOnText = "FEFEFD", onAccent = "FEFEFE", accent = "E2774A" })
+    pal("Star Road", { bg = "1D1436", side = "3A2672", sideMuted = "CBB9ED", top = "150D2A", topText = "FFF6FE", surface = "261849", raised = "2F1F59", track = "4A3680", line = "3A2A68", text = "FFF7FF", muted = "CBBAEE", danger = "E0645E", outline = "08040F", shadow = "05020A", tabOn = "EEC452", tabOnText = "26144A", onAccent = "FEFEFE", accent = "DE6AAE" })
+    if not THEMES[Cfg.UITheme] then Cfg.UITheme = "Overworld" end
+
+    local T = { white = Color3.new(1, 1, 1), accent = Cfg.UIAccent }
+
+    -- registri tema: instance yang dibuat dengan warna token dicatat, lalu dicat ulang saat tema diganti
+    local TokKey = {}
+    local Themed = setmetatable({}, { __mode = "k" })
+    local TOKPROPS = {
+        BackgroundColor3 = true, TextColor3 = true, Color = true, ImageColor3 = true,
+        ScrollBarImageColor3 = true, PlaceholderColor3 = true,
     }
+    local function ck(c)
+        return string.format("%d,%d,%d", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+    end
+    local function loadTheme(name)
+        local th = THEMES[name] or THEMES.Overworld
+        table.clear(TokKey)
+        for k, v in pairs(th.tokens) do
+            T[k] = v
+            TokKey[ck(v)] = k
+        end
+    end
+    loadTheme(Cfg.UITheme)
 
     local MIN_W, MIN_H = 340, 230
 
-    local UI = { pages = {}, order = {}, rows = {}, dyn = {}, accentFns = {}, current = nil, T = T }
+    local UI = { pages = {}, order = {}, rows = {}, dyn = {}, accentFns = {}, current = nil, T = T, themes = THEME_ORDER }
     Hub.UI = UI
 
     local builders = {}
@@ -40,12 +73,40 @@ return function(Hub)
         for _, fn in ipairs(UI.accentFns) do pcall(fn) end
     end)
 
+    local applyTheme -- didefinisikan di bawah
+
     --========================================================
     -- HELPER
     --========================================================
+    local function tokOf(c)
+        if typeof(c) ~= "Color3" or c == T.accent then return nil end
+        return TokKey[ck(c)]
+    end
+    local function bindTok(o, prop, tok)
+        local m = Themed[o]
+        if not m then
+            m = {}
+            Themed[o] = m
+        end
+        m[prop] = tok
+    end
+    local function repaintAll()
+        for o, m in pairs(Themed) do
+            for p, tk in pairs(m) do
+                if T[tk] then pcall(function() o[p] = T[tk] end) end
+            end
+        end
+    end
+
     local function new(class, props, parent)
         local o = Instance.new(class)
-        for k, v in pairs(props) do o[k] = v end
+        for k, v in pairs(props) do
+            o[k] = v
+            if TOKPROPS[k] then
+                local tk = tokOf(v)
+                if tk then bindTok(o, k, tk) end
+            end
+        end
         if parent then o.Parent = parent end
         return o
     end
@@ -57,6 +118,10 @@ return function(Hub)
             Color = col or T.line, Thickness = th or 1, Transparency = tr or 0.3,
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
         }, o)
+    end
+    -- gaya blok: outline tebal berwarna outline
+    local function block(o, th)
+        return stroke(o, T.outline, 0, th or 2)
     end
     local function label(parent, text, size, color, props)
         local l = new("TextLabel", {
@@ -212,34 +277,56 @@ return function(Hub)
         local W = (Cfg.UIW > 0) and math.clamp(Cfg.UIW, MIN_W, sc.X) or dW
         local H = (Cfg.UIH > 0) and math.clamp(Cfg.UIH, MIN_H, sc.Y) or dH
 
+        -- bayangan blok: frame terpisah di belakang jendela (jendela memakai ClipsDescendants)
+        local shadow = new("Frame", { BackgroundColor3 = T.shadow, BorderSizePixel = 0, ZIndex = 0 }, gui)
+        corner(shadow, 14)
+
         win = new("Frame", {
             Size = UDim2.fromOffset(W, H),
             Position = UDim2.fromOffset(math.floor((sc.X - W) / 2), math.floor((sc.Y - H) / 2)),
             BackgroundColor3 = T.bg, BorderSizePixel = 0, Active = true, ClipsDescendants = true,
         }, gui)
         corner(win, 14)
-        stroke(win, T.line, 0.1)
+        block(win, 3)
+
+        local function syncShadow()
+            local p = win.Position
+            shadow.Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset + 6)
+            shadow.Size = win.Size
+            shadow.Visible = win.Visible
+        end
+        for _, prop in ipairs({ "Position", "Size", "Visible" }) do
+            win:GetPropertyChangedSignal(prop):Connect(syncShadow)
+        end
+        syncShadow()
 
         ------------------------------------------------------------
         -- BAR ATAS
         ------------------------------------------------------------
-        local top = new("Frame", { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = T.side, BorderSizePixel = 0 }, win)
+        local top = new("Frame", { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = T.top, BorderSizePixel = 0 }, win)
+        corner(top, 14)
+        new("Frame", {
+            Position = UDim2.new(0, 0, 1, -14), Size = UDim2.new(1, 0, 0, 14), BackgroundColor3 = T.top, BorderSizePixel = 0,
+        }, top)
+        new("Frame", {
+            Position = UDim2.new(0, 0, 1, -3), Size = UDim2.new(1, 0, 0, 3), BackgroundColor3 = T.outline, BorderSizePixel = 0,
+        }, top)
         local dotMark = new("Frame", {
             Size = UDim2.fromOffset(8, 8), Position = UDim2.new(0, 14, 0.5, -4), BackgroundColor3 = T.accent, BorderSizePixel = 0,
         }, top)
         corner(dotMark, 4)
         UI.accent(function() dotMark.BackgroundColor3 = T.accent end)
-        label(top, "TOF Hub", 13, T.text, {
+        label(top, "TOF Hub", 13, T.topText, {
             Position = UDim2.fromOffset(30, 0), Size = UDim2.new(1, -110, 1, 0), Font = Enum.Font.GothamBold,
         })
-        local function topBtn(text, xOff, color, size)
+        local function topBtn(text, xOff, size)
             return new("TextButton", {
-                Text = text, Size = UDim2.fromOffset(34, 34), Position = UDim2.new(1, xOff, 0, 0),
-                BackgroundTransparency = 1, TextColor3 = color or T.muted, TextSize = size or 18, Font = Enum.Font.GothamMedium,
+                Text = text, Size = UDim2.fromOffset(34, 31), Position = UDim2.new(1, xOff, 0, 0),
+                BackgroundTransparency = 1, TextColor3 = T.topText, TextSize = size or 18, Font = Enum.Font.GothamMedium,
             }, top)
         end
         local minBtn = topBtn("–", -68)
-        local closeBtn = topBtn("×", -34, T.danger, 22)
+        local closeBtn = topBtn("×", -34, 22)
 
         top.InputBegan:Connect(function(i)
             if not isPress(i) then return end
@@ -260,14 +347,21 @@ return function(Hub)
         -- SIDEBAR
         ------------------------------------------------------------
         side = new("Frame", { Size = UDim2.new(0, 140, 1, 0), BackgroundColor3 = T.side, BorderSizePixel = 0 }, body)
+        corner(side, 14)
+        -- penutup sudut: hanya sudut kiri-bawah sidebar yang membulat mengikuti jendela
+        new("Frame", { Size = UDim2.new(1, 0, 0, 14), BackgroundColor3 = T.side, BorderSizePixel = 0 }, side)
         new("Frame", {
-            Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(1, -1, 0, 0), BackgroundColor3 = T.line, BorderSizePixel = 0,
+            Position = UDim2.new(1, -14, 0, 0), Size = UDim2.new(0, 14, 1, 0), BackgroundColor3 = T.side, BorderSizePixel = 0,
+        }, side)
+        new("Frame", {
+            Size = UDim2.new(0, 3, 1, 0), Position = UDim2.new(1, -3, 0, 0), BackgroundColor3 = T.outline, BorderSizePixel = 0,
         }, side)
 
         local sWrap = new("Frame", {
-            Position = UDim2.fromOffset(10, 10), Size = UDim2.new(1, -20, 0, 32), BackgroundColor3 = T.raised, BorderSizePixel = 0,
+            Position = UDim2.fromOffset(10, 10), Size = UDim2.new(1, -23, 0, 32), BackgroundColor3 = T.raised, BorderSizePixel = 0,
         }, side)
         corner(sWrap, 10)
+        block(sWrap, 2)
         -- ikon kaca pembesar (digambar dari frame, tanpa teks)
         local lens = new("Frame", {
             Size = UDim2.fromOffset(10, 10), Position = UDim2.fromOffset(11, 9), BackgroundTransparency = 1,
@@ -290,7 +384,7 @@ return function(Hub)
         clearBtn.Activated:Connect(function() searchBox.Text = "" end)
 
         navSf = new("ScrollingFrame", {
-            Position = UDim2.fromOffset(0, 52), Size = UDim2.new(1, 0, 1, -56), BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(0, 52), Size = UDim2.new(1, -3, 1, -56), BackgroundTransparency = 1,
             BorderSizePixel = 0, ScrollBarThickness = 0, CanvasSize = UDim2.new(0, 0, 0, 0),
             AutomaticCanvasSize = Enum.AutomaticSize.Y,
         }, side)
@@ -312,7 +406,7 @@ return function(Hub)
 
         resultsSf = new("ScrollingFrame", {
             Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
-            ScrollBarImageColor3 = T.raised, CanvasSize = UDim2.new(0, 0, 0, 0),
+            ScrollBarImageColor3 = T.track, CanvasSize = UDim2.new(0, 0, 0, 0),
             AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false,
         }, pagesHolder)
         new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, resultsSf)
@@ -329,7 +423,7 @@ return function(Hub)
             AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = T.raised, BorderSizePixel = 0, Visible = false, ZIndex = 20,
         }, content)
         corner(toastFrame, 15)
-        stroke(toastFrame, T.line, 0.2)
+        block(toastFrame, 2)
         new("UIPadding", { PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16) }, toastFrame)
         toastLbl = label(toastFrame, "", 12, T.text, {
             Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, ZIndex = 21,
@@ -380,7 +474,7 @@ return function(Hub)
             Visible = false, AutoButtonColor = false, BorderSizePixel = 0,
         }, gui)
         corner(float, 22)
-        local fs = new("UIStroke", { Color = T.accent, Thickness = 2 }, float)
+        local fs = new("UIStroke", { Color = T.accent, Thickness = 3 }, float)
         UI.accent(function()
             float.TextColor3 = T.accent
             fs.Color = T.accent
@@ -429,11 +523,11 @@ return function(Hub)
         for _, p in pairs(UI.pages) do
             local on = (p == UI.current)
             p.sf.Visible = on and not searching
-            p.tab.BackgroundColor3 = T.accent
-            p.tab.BackgroundTransparency = on and 0.85 or 1
+            p.tab.BackgroundColor3 = T.tabOn
+            p.tab.BackgroundTransparency = on and 0 or 1
             p.bar.Visible = on
             p.bar.BackgroundColor3 = T.accent
-            p.txt.TextColor3 = on and T.text or T.muted
+            p.txt.TextColor3 = on and T.tabOnText or T.sideMuted
         end
         if UI.current and not searching then headerLbl.Text = UI.current.name end
     end
@@ -451,7 +545,7 @@ return function(Hub)
         if UI.pages[name] then return UI.pages[name] end
         local sf = new("ScrollingFrame", {
             Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0,
-            ScrollBarThickness = 3, ScrollBarImageColor3 = T.raised, CanvasSize = UDim2.new(0, 0, 0, 0),
+            ScrollBarThickness = 3, ScrollBarImageColor3 = T.track, CanvasSize = UDim2.new(0, 0, 0, 0),
             AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false,
         }, pagesHolder)
         new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, sf)
@@ -461,7 +555,7 @@ return function(Hub)
 
         local ord = order or (100 + #UI.order)
         local tab = new("TextButton", {
-            Text = "", Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = T.accent, BackgroundTransparency = 1,
+            Text = "", Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = T.tabOn, BackgroundTransparency = 1,
             BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = ord,
         }, navSf)
         corner(tab, 9)
@@ -470,7 +564,7 @@ return function(Hub)
             BorderSizePixel = 0, Visible = false,
         }, tab)
         corner(bar, 2)
-        local txt = label(tab, name, 13, T.muted, {
+        local txt = label(tab, name, 13, T.sideMuted, {
             Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -20, 1, 0),
             Font = Enum.Font.GothamMedium, TextTruncate = Enum.TextTruncate.AtEnd,
         })
@@ -501,7 +595,7 @@ return function(Hub)
             BorderSizePixel = 0, LayoutOrder = order,
         }, self.holder)
         corner(r, 10)
-        local st = stroke(r)
+        local st = block(r, 2)
         st.Enabled = not inGroup
         local div
         if inGroup then
@@ -527,7 +621,7 @@ return function(Hub)
             BorderSizePixel = 0, LayoutOrder = self.n,
         }, self.sf)
         corner(grp, 10)
-        stroke(grp)
+        block(grp, 2)
         new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, grp)
         local head = new("TextButton", {
             Size = UDim2.new(1, 0, 0, 42), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, LayoutOrder = 1,
@@ -579,6 +673,7 @@ return function(Hub)
             BorderSizePixel = 0,
         }, r)
         corner(sw, 11)
+        block(sw, 1.5)
         local dot = new("Frame", {
             Size = UDim2.fromOffset(16, 16), BackgroundColor3 = T.white, BorderSizePixel = 0,
         }, sw)
@@ -586,7 +681,7 @@ return function(Hub)
         local first = true
         local function paint()
             local on = Cfg[key] == true
-            local col = on and T.accent or T.raised
+            local col = on and T.accent or T.track
             local pos = UDim2.fromOffset(on and 19 or 3, 3)
             if first then
                 sw.BackgroundColor3, dot.Position = col, pos
@@ -611,7 +706,7 @@ return function(Hub)
             Font = Enum.Font.GothamMedium,
         })
         local track = new("Frame", {
-            Position = UDim2.new(0, 14, 0, 38), Size = UDim2.new(1, -28, 0, 4), BackgroundColor3 = T.raised, BorderSizePixel = 0,
+            Position = UDim2.new(0, 14, 0, 38), Size = UDim2.new(1, -28, 0, 4), BackgroundColor3 = T.track, BorderSizePixel = 0,
         }, r)
         corner(track, 2)
         local fill = new("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = T.accent, BorderSizePixel = 0 }, track)
@@ -620,6 +715,7 @@ return function(Hub)
             Size = UDim2.fromOffset(14, 14), BackgroundColor3 = T.white, BorderSizePixel = 0,
         }, track)
         corner(knob, 7)
+        block(knob, 1.5)
 
         local function paint()
             local v = tonumber(Cfg[key]) or min
@@ -682,7 +778,7 @@ return function(Hub)
             AutoButtonColor = false,
         }, r)
         corner(sw, 7)
-        stroke(sw, T.white, 0.75)
+        block(sw, 1.5)
 
         local base = Cfg[key]
         local h, s, v = 0, 0, 1
@@ -812,6 +908,7 @@ return function(Hub)
             BorderSizePixel = 0, AutoButtonColor = false, Text = "",
         }, r)
         corner(b, 8)
+        block(b, 1.5)
         local function paint() b.Text = tostring(Cfg[key]) end
         paint()
         Config.watch(key, paint)
@@ -830,6 +927,7 @@ return function(Hub)
             ClearTextOnFocus = false, BorderSizePixel = 0, Text = "",
         }, r)
         corner(tb, 8)
+        block(tb, 1.5)
         new("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, tb)
         local function paint() tb.Text = tostring(Cfg[key]) end
         paint()
@@ -851,13 +949,17 @@ return function(Hub)
             Font = Enum.Font.GothamMedium, TextSize = 13, BorderSizePixel = 0, AutoButtonColor = true, Text = "",
         }, r)
         corner(b, 9)
+        block(b, 1.5)
         local function color()
             if style == true or style == "danger" then
                 b.BackgroundColor3 = T.danger
+                b.TextColor3 = T.onAccent
             elseif style == "primary" then
                 b.BackgroundColor3 = T.accent
+                b.TextColor3 = T.onAccent
             else
                 b.BackgroundColor3 = T.raised
+                b.TextColor3 = T.text
             end
         end
         color()
@@ -899,12 +1001,37 @@ return function(Hub)
     end
 
     --========================================================
+    -- GANTI TEMA (live): isi ulang token -> cat ulang semua instance bertoken -> jalankan ulang fungsi aksen
+    -- (toggle, tab, tombol, dst. menghitung ulang warna state-nya sendiri lewat UI.accent)
+    --========================================================
+    applyTheme = function(name)
+        if not THEMES[name] then return end
+        loadTheme(name)
+        repaintAll()
+        for _, fn in ipairs(UI.accentFns) do pcall(fn) end
+    end
+    Config.watch("UITheme", function(name) applyTheme(name) end)
+
+    -- ganti ke tema berikutnya sekaligus memakai warna aksen bawaan tema itu
+    function UI.nextTheme()
+        local idx = table.find(THEME_ORDER, Cfg.UITheme) or 0
+        local nxt = THEME_ORDER[idx % #THEME_ORDER + 1]
+        T.accent = THEMES[nxt].accent
+        Config.set("UITheme", nxt)
+        Config.set("UIAccent", THEMES[nxt].accent)
+        applyTheme(nxt)
+        return nxt
+    end
+
+    --========================================================
     -- FITUR
     --========================================================
     Hub.register({
         id = "ui",
         interval = 0.5,
         init = function()
+            loadTheme(Cfg.UITheme)
+            T.accent = Cfg.UIAccent
             build()
             UI.accent(restyle)
             for _, fn in ipairs(builders) do Hub.safe("ui:builder", fn, UI) end
